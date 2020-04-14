@@ -1,2 +1,4 @@
 pyenv/*
 .vscode/*
+*.pyc
+db.sqlite3
