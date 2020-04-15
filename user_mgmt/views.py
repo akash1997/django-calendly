@@ -39,4 +39,3 @@ class UserRegisterView(APIView):
             user = User.objects.create_user(username=email, email=email, password=password)
             Token.objects.create(user=user)
             return Response(data="User successfully registered!", status=HTTP_200_OK)
-
