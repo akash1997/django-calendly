@@ -7,13 +7,8 @@ from django.db import models
 class CalenderSlot(models.Model):
     belongs_to = models.ForeignKey(to=User, related_name='created_slots', on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
-    slot_date = models.DateField()
-    start_time = models.TimeField()
-    end_time = models.TimeField()
-
-    def save(self, *args, **kwargs):
-        self.end_time = self.start_time + datetime.timedelta(hours=1)
-        super().save(*args, **kwargs)
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
 
     class Meta:
         ordering = ['-created_at']
