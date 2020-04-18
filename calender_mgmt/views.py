@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from django.contrib.auth.models import User
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import CalenderSlot, SlotBooking
@@ -131,3 +132,26 @@ class BookSlotView(APIView):
         return Response(
             data="Booked the slot successfully! Your Booking ID is {}".format(slot_booking_details.id), status=HTTP_200_OK
         )
+
+
+class CreateSlotsForIntervalView(APIView):
+    def post(self, request, *args, **kwargs):
+        interval_start = datetime.datetime.strptime(request.data['interval_start'], "%Y-%m-%dT%H:%M:%SZ")
+        interval_stop = datetime.datetime.strptime(request.data['interval_stop'], "%Y-%m-%dT%H:%M:%SZ")
+        if (interval_start.day != interval_stop.day) or (interval_start.month != interval_stop.month) or (interval_start.year != interval_stop.year):
+            return Response(data="The interval days do not match! Please try again!", status=HTTP_400_BAD_REQUEST)
+
+        slot_start_time = interval_start
+        slot_end_time = slot_start_time + datetime.timedelta(hours=1)
+        interval_date = datetime.date(slot_start_time.year, slot_start_time.month, slot_start_time.day)
+        queryset = CalenderSlot.objects.filter(belongs_to=request.user).filter(start_time__date=interval_date)
+        while slot_end_time <= interval_stop:
+            if not queryset.filter(
+                (Q(start_time__lt=slot_end_time) & Q(start_time__gte=slot_start_time)) | 
+                (Q(end_time__gt=slot_start_time) & Q(end_time__lte=slot_end_time)),
+                start_time__date=interval_date
+            ):
+                CalenderSlot.objects.create(belongs_to=request.user, start_time=slot_start_time, end_time=slot_end_time)
+            slot_start_time = slot_end_time
+            slot_end_time = slot_end_time + datetime.timedelta(hours=1)
+        return Response(data="Slots created successfully!", status=HTTP_200_OK)
