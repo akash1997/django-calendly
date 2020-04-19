@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from .functions import generate_google_calendar_link
 from .models import CalenderSlot, SlotBooking
 
 
@@ -128,10 +129,13 @@ class BookSlotView(APIView):
                 data="The key 'description' not found in the request body! Please try again!",
                 status=HTTP_400_BAD_REQUEST
             )
-        slot_booking_details = SlotBooking.objects.create(slot=slot, booked_by=request.user, description=booking_description)
-        return Response(
-            data="Booked the slot successfully! Your Booking ID is {}".format(slot_booking_details.id), status=HTTP_200_OK
-        )
+        with transaction.atomic():
+            slot_booking_details = SlotBooking.objects.create(slot=slot, booked_by=request.user, description=booking_description)
+            response_data = {
+                "message": "Booked the slot successfully! Your Booking ID is {}".format(slot_booking_details.id),
+                "add_to_google_calendar": generate_google_calendar_link(slot_booking_details)
+            }
+            return Response(data=response_data, status=HTTP_200_OK)
 
 
 class CreateSlotsForIntervalView(APIView):
