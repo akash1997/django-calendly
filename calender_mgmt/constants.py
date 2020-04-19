@@ -1,0 +1,12 @@
+class ResponseMessages:
+    INVALID_DATA = "Invalid request data!"
+    CREATE_FUTURE_SLOTS = "You have attempted to create a slot in the past. Please create one in the future!"
+    CONFLICTING_SLOT = "Cannot create this slot as it conflicts with an existing slot between {} and {}."
+    CALENDER_SLOT_NOT_FOUND = "Requested calender slot not found!"
+    USER_NOT_FOUND = "The requested user id does not exist. Please check again!"
+    CALENDER_SLOT_ALREADY_BOOKED = "The requested slot is already booked! Please try another one!"
+    CALENDER_SLOT_EXPIRED = "The slot you are trying to book is in the past, please try booking another slot!"
+    MISSING_KEY = "Missing key '{}' in the request!"
+    REGISTERATION_REQUIRED = "You must be a registered user to perform this activity!"
+    BOOKING_NOT_FOUND = "The booking for the requested slot not found!"
+    INTERVAL_DAY_MISMATCH = "The interval days do not match! Please try again!"

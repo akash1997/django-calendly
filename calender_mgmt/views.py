@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from .constants import ResponseMessages
 from .functions import generate_google_calendar_link
 from .models import CalenderSlot, SlotBooking
 
@@ -26,23 +27,18 @@ class SlotDataView(APIView):
         try:
             start_time = datetime.datetime.strptime(request.data['start_time'], "%Y-%m-%dT%H:%M:%SZ")
         except KeyError:
-            return Response(data="Could not find the request key 'start_time'!", status=HTTP_400_BAD_REQUEST)
+            return Response(data=ResponseMessages.MISSING_KEY.format("start_time"), status=HTTP_400_BAD_REQUEST)
         except ValueError:
-            return Response(data="Invalid request data!", status=HTTP_400_BAD_REQUEST)
+            return Response(data=ResponseMessages.INVALID_DATA, status=HTTP_400_BAD_REQUEST)
         end_time = start_time + datetime.timedelta(hours=1)
         if end_time < datetime.datetime.now():
-            return Response(
-                data="You have attempted to create a slot in the past. Please create one in the future!",
-                status=HTTP_400_BAD_REQUEST
-            )
+            return Response(data=ResponseMessages.CREATE_FUTURE_SLOTS, status=HTTP_400_BAD_REQUEST)
         blocking_slot = CalenderSlot.objects.filter(belongs_to=request.user, end_time__gt=start_time)
         if blocking_slot:
-            response_message = "Cannot create this slot as it conflicts with an existing slot between {} and {}.".format(
-                blocking_slot[0].start_time, blocking_slot[0].end_time
-            )
+            response_message = ResponseMessages.CONFLICTING_SLOT.format(blocking_slot[0].start_time, blocking_slot[0].end_time)
             return Response(data=response_message, status=HTTP_400_BAD_REQUEST)
-        CalenderSlot.objects.create(belongs_to=request.user, start_time=start_time, end_time=end_time)
-        return Response(data="Successfully created the calender slot.", status=HTTP_200_OK)
+        calender_slot = CalenderSlot.objects.create(belongs_to=request.user, start_time=start_time, end_time=end_time)
+        return Response(data={'id': calender_slot.id}, status=HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
         """Returns all the slot details created by the logged in user.
@@ -78,10 +74,7 @@ class SlotDetailsView(APIView):
 
         """
         if CalenderSlot.objects.filter(id=kwargs['id'], belongs_to=request.user).exists() is False:
-            return Response(
-                data="Requested calender slot not found, please check if the slot exists and belongs to you!",
-                status=HTTP_404_NOT_FOUND
-            )
+            return Response(data=ResponseMessages.CALENDER_SLOT_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         slot_details = CalenderSlot.objects.select_related('booking_details__booked_by').get(
             id=kwargs['id'], belongs_to=request.user
         )
@@ -112,11 +105,11 @@ class SlotDetailsView(APIView):
 
         """
         try:
-            CalenderSlot.objects.get(id=kwargs['id']).delete()
+            CalenderSlot.objects.get(id=kwargs['id'], belongs_to=request.user).delete()
         except CalenderSlot.DoesNotExist:
-            return Response(data="The requested calendar slot does not exist!", status=HTTP_404_NOT_FOUND)
+            return Response(data=ResponseMessages.CALENDER_SLOT_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         else:
-            return Response(data="The requested calendar slot is deleted successfully!", status=HTTP_200_OK)
+            return Response(status=HTTP_200_OK)
 
 
 class GetAvailableSlots(APIView):
@@ -131,7 +124,7 @@ class GetAvailableSlots(APIView):
         try:
             user = User.objects.get(id=kwargs['user_id'])
         except User.DoesNotExist:
-            return Response(data="The requested user id does not exist. Please check again!", status=HTTP_404_NOT_FOUND)
+            return Response(data=ResponseMessages.USER_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         available_slots = CalenderSlot.objects.filter(
             start_time__gt=timezone.now(), booking_details=None, belongs_to=user
         )
@@ -158,27 +151,19 @@ class BookSlotView(APIView):
         try:
             slot = CalenderSlot.objects.get(id=kwargs['id'])
         except Calenderslot.DoesNotExist:
-            return Response(data="The requested slot not found! Please check again!", status=HTTP_404_NOT_FOUND)
+            return Response(data=ResponseMessages.CALENDER_SLOT_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         if SlotBooking.objects.filter(slot=slot).exists():
-            return Response(
-                data="The requested slot is already booked! Please try another slot!", status=HTTP_400_BAD_REQUEST
-            )
+            return Response(data=ResponseMessages.CALENDER_SLOT_ALREADY_BOOKED, status=HTTP_400_BAD_REQUEST)
         if slot.end_time < timezone.now():
-            return Response(
-                data="The slot you are trying to book is in the past, please try booking another slot!",
-                status=HTTP_400_BAD_REQUEST
-            )
+            return Response(data=ResponseMessages.CALENDER_SLOT_EXPIRED, status=HTTP_400_BAD_REQUEST)
         try:
             booking_description = request.data['description']
         except KeyError:
-            return Response(
-                data="The key 'description' not found in the request body! Please try again!",
-                status=HTTP_400_BAD_REQUEST
-            )
+            return Response(data=ResponseMessages.MISSING_KEY.format("description"), status=HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             slot_booking_details = SlotBooking.objects.create(slot=slot, booked_by=request.user, description=booking_description)
             response_data = {
-                "message": "Booked the slot successfully! Your Booking ID is {}".format(slot_booking_details.id),
+                "id": slot_booking_details.id,
                 "add_to_google_calendar": generate_google_calendar_link(slot_booking_details)
             }
             return Response(data=response_data, status=HTTP_200_OK)
@@ -190,12 +175,12 @@ class BookSlotView(APIView):
 
         """
         if request.user is None:
-            return Response(data="Only registered users can delete bookings.", status=HTTP_401_UNAUTHORIZED)
-        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), slot__id=kwargs['id'])
+            return Response(data=ResponseMessages.REGISTERATION_REQUIRED, status=HTTP_401_UNAUTHORIZED)
+        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), id=kwargs['id'])
         if len(booking) == 0:
-            return Response(data="The requested booking not found or does not belong to you!", status=HTTP_404_NOT_FOUND)
+            return Response(data=ResponseMessages.BOOKING_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         booking[0].delete()
-        return Response(data="The requested booking is deleted successfully!", status=HTTP_200_OK)
+        return Response(status=HTTP_200_OK)
 
 
 class CreateSlotsForIntervalView(APIView):
@@ -208,19 +193,21 @@ class CreateSlotsForIntervalView(APIView):
         interval_start = datetime.datetime.strptime(request.data['interval_start'], "%Y-%m-%dT%H:%M:%SZ")
         interval_stop = datetime.datetime.strptime(request.data['interval_stop'], "%Y-%m-%dT%H:%M:%SZ")
         if (interval_start.day != interval_stop.day) or (interval_start.month != interval_stop.month) or (interval_start.year != interval_stop.year):
-            return Response(data="The interval days do not match! Please try again!", status=HTTP_400_BAD_REQUEST)
+            return Response(data=ResponseMessages.INTERVAL_DAY_MISMATCH, status=HTTP_400_BAD_REQUEST)
 
         slot_start_time = interval_start
         slot_end_time = slot_start_time + datetime.timedelta(hours=1)
         interval_date = datetime.date(slot_start_time.year, slot_start_time.month, slot_start_time.day)
         queryset = CalenderSlot.objects.filter(belongs_to=request.user).filter(start_time__date=interval_date)
+        created_slot_ids = []
         while slot_end_time <= interval_stop:
             if not queryset.filter(
                 (Q(start_time__lt=slot_end_time) & Q(start_time__gte=slot_start_time)) | 
                 (Q(end_time__gt=slot_start_time) & Q(end_time__lte=slot_end_time)),
                 start_time__date=interval_date
             ):
-                CalenderSlot.objects.create(belongs_to=request.user, start_time=slot_start_time, end_time=slot_end_time)
+                slot = CalenderSlot.objects.create(belongs_to=request.user, start_time=slot_start_time, end_time=slot_end_time)
+                created_slot_ids.append(slot.id)
             slot_start_time = slot_end_time
             slot_end_time = slot_end_time + datetime.timedelta(hours=1)
-        return Response(data="Slots created successfully!", status=HTTP_200_OK)
+        return Response(data=created_slot_ids, status=HTTP_200_OK)
