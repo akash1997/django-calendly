@@ -11,6 +11,9 @@ from django.db import transaction
 
 class UserLoginView(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
+        """Checks for the login details of the user and sends the token if successfully authenticated.
+
+        """
         serializer = self.serializer_class(data=request.data, context={'request': request})
         try:
             serializer.is_valid(raise_exception=True)
@@ -28,6 +31,9 @@ class UserRegisterView(APIView):
     permission_classes = []
 
     def post(self, request, *args, **kwargs):
+        """Creates a new user and generates their token with the provided email and password.
+
+        """
         try:
             email = request.data['email']
             password = request.data['password']

@@ -131,7 +131,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'user_mgmt.authentication.CustomTokenAuthentication',
     ],
     'UNAUTHENTICATED_USER': None
 }

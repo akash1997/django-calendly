@@ -2,7 +2,7 @@ import datetime
 import time
 
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
+from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_401_UNAUTHORIZED, HTTP_404_NOT_FOUND
 from rest_framework.views import APIView
 
 from django.contrib.auth.models import User
@@ -16,6 +16,13 @@ from .models import CalenderSlot, SlotBooking
 
 class SlotDataView(APIView):
     def post(self, request, *args, **kwargs):
+        """Creates a bookable slot for the logged in user.
+
+        Creates a slot of one hour from the provided start time available for booking for the logged in user.
+        The slot is created if it does not conflict with any existing slot and if the end time of the slot is greater than the
+        current time, because the slot should be available to book after it is created.
+
+        """
         try:
             start_time = datetime.datetime.strptime(request.data['start_time'], "%Y-%m-%dT%H:%M:%SZ")
         except KeyError:
@@ -38,6 +45,11 @@ class SlotDataView(APIView):
         return Response(data="Successfully created the calender slot.", status=HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
+        """Returns all the slot details created by the logged in user.
+
+        Returns the id, start and end time of the slot, and if the slot is booked for each of the slots.
+
+        """
         all_created_slots = CalenderSlot.objects.filter(belongs_to=request.user)
         response_data = []
         for slot_detail in all_created_slots:
@@ -58,6 +70,13 @@ class SlotDataView(APIView):
 
 class SlotDetailsView(APIView):
     def get(self, request, *args, **kwargs):
+        """Gives a detailed information of the specified slot, including details of the booking if it is booked.
+
+        The booking status is determined by accessing the `booking_details` from the current slot object, which is
+        set only when the slot is booked. If it was booked anonymously, the booked by field is set to the string
+        `Anonymous User`, else the username of the registered user is set in the response data.
+
+        """
         if CalenderSlot.objects.filter(id=kwargs['id'], belongs_to=request.user).exists() is False:
             return Response(
                 data="Requested calender slot not found, please check if the slot exists and belongs to you!",
@@ -88,19 +107,40 @@ class SlotDetailsView(APIView):
             })
         return Response(data=response_data, status=HTTP_200_OK)
 
+    def delete(self, request, *args, **kwargs):
+        """Deletes the requested calender slot.
+
+        """
+        try:
+            CalenderSlot.objects.get(id=kwargs['id']).delete()
+        except CalenderSlot.DoesNotExist:
+            return Response(data="The requested calendar slot does not exist!", status=HTTP_404_NOT_FOUND)
+        else:
+            return Response(data="The requested calendar slot is deleted successfully!", status=HTTP_200_OK)
+
 
 class GetAvailableSlots(APIView):
     permission_classes = []
 
     def get(self, request, *args, **kwargs):
-        available_slots = CalenderSlot.objects.filter(start_time__gt=timezone.now(), booking_details=None)
+        """Lists all the available slots of the requested user.
+        
+        This API is accessible by both registered and anonymous users. So no authentication check is done.
+
+        """
+        try:
+            user = User.objects.get(id=kwargs['user_id'])
+        except User.DoesNotExist:
+            return Response(data="The requested user id does not exist. Please check again!", status=HTTP_404_NOT_FOUND)
+        available_slots = CalenderSlot.objects.filter(
+            start_time__gt=timezone.now(), booking_details=None, belongs_to=user
+        )
         response_data = []
         for slot_details in available_slots:
             response_data.append({
                 "id": slot_details.id,
                 "start_time": str(slot_details.start_time),
-                "end_time": str(slot_details.end_time),
-                "belongs_to": slot_details.belongs_to.username
+                "end_time": str(slot_details.end_time)
             })
         return Response(data=response_data, status=HTTP_200_OK)
 
@@ -109,6 +149,12 @@ class BookSlotView(APIView):
     permission_classes = []
 
     def post(self, request, *args, **kwargs):
+        """Books the requested slot. This API is accessible for both anonymous and registered users.
+
+        Checks if the requested slot exists and is not booked yet. Booking is only allwed for slots in the future.
+        Returns the booking id and a link to add the event to Google Calendar.
+
+        """
         try:
             slot = CalenderSlot.objects.get(id=kwargs['id'])
         except Calenderslot.DoesNotExist:
@@ -137,9 +183,28 @@ class BookSlotView(APIView):
             }
             return Response(data=response_data, status=HTTP_200_OK)
 
+    def delete(self, request, *args, **kwargs):
+        """Deletes the requested booking.
+
+        Only the bookings made by registered users can be deleted. This is to prevent cases where anyone can delete bookings of others.
+
+        """
+        if request.user is None:
+            return Response(data="Only registered users can delete bookings.", status=HTTP_401_UNAUTHORIZED)
+        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), id=kwargs['id'])
+        if len(booking) == 0:
+            return Response(data="The requested booking not found or does not belong to you!", status=HTTP_404_NOT_FOUND)
+        booking[0].delete()
+        return Response(data="The requested booking is deleted successfully!", status=HTTP_200_OK)
+
 
 class CreateSlotsForIntervalView(APIView):
     def post(self, request, *args, **kwargs):
+        """Generates slots in bulk for the provided start and end interval time.
+
+        Prevents creation of slots which conflict with the already created slots. The interval start and end need to be on the same day.
+
+        """
         interval_start = datetime.datetime.strptime(request.data['interval_start'], "%Y-%m-%dT%H:%M:%SZ")
         interval_stop = datetime.datetime.strptime(request.data['interval_stop'], "%Y-%m-%dT%H:%M:%SZ")
         if (interval_start.day != interval_stop.day) or (interval_start.month != interval_stop.month) or (interval_start.year != interval_stop.year):
