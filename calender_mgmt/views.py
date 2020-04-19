@@ -191,7 +191,7 @@ class BookSlotView(APIView):
         """
         if request.user is None:
             return Response(data="Only registered users can delete bookings.", status=HTTP_401_UNAUTHORIZED)
-        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), id=kwargs['id'])
+        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), slot__id=kwargs['id'])
         if len(booking) == 0:
             return Response(data="The requested booking not found or does not belong to you!", status=HTTP_404_NOT_FOUND)
         booking[0].delete()
