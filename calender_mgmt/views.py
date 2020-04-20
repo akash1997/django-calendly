@@ -20,8 +20,8 @@ class SlotDataView(APIView):
         """Creates a bookable slot for the logged in user.
 
         Creates a slot of one hour from the provided start time available for booking for the logged in user.
-        The slot is created if it does not conflict with any existing slot and if the end time of the slot is greater than the
-        current time, because the slot should be available to book after it is created.
+        The slot is created if it does not conflict with any existing slot and if the end time of the slot is
+        greater than the current time, because the slot should be available to book after it is created.
 
         """
         try:
@@ -150,7 +150,7 @@ class BookSlotView(APIView):
         """
         try:
             slot = CalenderSlot.objects.get(id=kwargs['id'])
-        except Calenderslot.DoesNotExist:
+        except CalenderSlot.DoesNotExist:
             return Response(data=ResponseMessages.CALENDER_SLOT_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         if SlotBooking.objects.filter(slot=slot).exists():
             return Response(data=ResponseMessages.CALENDER_SLOT_ALREADY_BOOKED, status=HTTP_400_BAD_REQUEST)
@@ -176,7 +176,7 @@ class BookSlotView(APIView):
         """
         if request.user is None:
             return Response(data=ResponseMessages.REGISTERATION_REQUIRED, status=HTTP_401_UNAUTHORIZED)
-        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), id=kwargs['id'])
+        booking = SlotBooking.objects.filter((Q(booked_by=request.user) | Q(slot__belongs_to=request.user)), slot__id=kwargs['id'])
         if len(booking) == 0:
             return Response(data=ResponseMessages.BOOKING_NOT_FOUND, status=HTTP_404_NOT_FOUND)
         booking[0].delete()
@@ -187,13 +187,11 @@ class CreateSlotsForIntervalView(APIView):
     def post(self, request, *args, **kwargs):
         """Generates slots in bulk for the provided start and end interval time.
 
-        Prevents creation of slots which conflict with the already created slots. The interval start and end need to be on the same day.
+        Prevents creation of slots which conflict with the already created slots.
 
         """
         interval_start = datetime.datetime.strptime(request.data['interval_start'], "%Y-%m-%dT%H:%M:%SZ")
         interval_stop = datetime.datetime.strptime(request.data['interval_stop'], "%Y-%m-%dT%H:%M:%SZ")
-        if (interval_start.day != interval_stop.day) or (interval_start.month != interval_stop.month) or (interval_start.year != interval_stop.year):
-            return Response(data=ResponseMessages.INTERVAL_DAY_MISMATCH, status=HTTP_400_BAD_REQUEST)
 
         slot_start_time = interval_start
         slot_end_time = slot_start_time + datetime.timedelta(hours=1)

@@ -9,4 +9,3 @@ class ResponseMessages:
     MISSING_KEY = "Missing key '{}' in the request!"
     REGISTERATION_REQUIRED = "You must be a registered user to perform this activity!"
     BOOKING_NOT_FOUND = "The booking for the requested slot not found!"
-    INTERVAL_DAY_MISMATCH = "The interval days do not match! Please try again!"
